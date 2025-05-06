@@ -1,6 +1,7 @@
 from flask_restful import Resource, reqparse
-from flask_jwt_extended import create_access_token, jwt_required
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt
 from models.usuario import UserModel
+from blocklist import BLOCKLIST
 
 # Parser único e centralizado
 user_args = reqparse.RequestParser()
@@ -8,7 +9,7 @@ user_args.add_argument('login', type=str, required=True, help="O campo 'login' n
 user_args.add_argument('senha', type=str, required=True, help="O campo 'senha' não pode estar em branco.")
 
 class User(Resource):
-    @jwt_required()  # Protege a rota com JWT
+    @jwt_required()
     def get(self, user_id):
         """
         Retorna informações de um usuário com base no user_id.
@@ -18,7 +19,7 @@ class User(Resource):
             return user.json(), 200
         return {"message": "Usuário não encontrado."}, 404
 
-    @jwt_required()  # Protege a rota com JWT
+    @jwt_required()
     def delete(self, user_id):
         """
         Deleta um usuário com base no user_id.
@@ -32,7 +33,6 @@ class User(Resource):
         except Exception as e:
             return {"message": f"Erro ao deletar usuário: {str(e)}"}, 500
 
-
 class UserRegister(Resource):
     def post(self):
         """
@@ -40,14 +40,12 @@ class UserRegister(Resource):
         """
         dados = user_args.parse_args()
 
-        # Verifica se o login já existe
         if UserModel.find_by_login(dados['login']):
             return {'message': f"O login '{dados['login']}' já está em uso."}, 400
 
         novo_usuario = UserModel(**dados)
         novo_usuario.save_user()
         return {'message': 'Usuário criado com sucesso.'}, 201
-
 
 class UserLogin(Resource):
     def post(self):
@@ -57,9 +55,8 @@ class UserLogin(Resource):
         dados = user_args.parse_args()
         usuario = UserModel.find_by_login(dados['login'])
 
-        # Verifica se o usuário existe e se a senha está correta
         if usuario and usuario.verify_password(dados['senha']):
-            access_token = create_access_token(identity=str(usuario.user_id))  # Gera o token JWT
+            access_token = create_access_token(identity=str(usuario.user_id))
             return {'access_token': access_token}, 200
 
         return {'message': 'Usuário ou senha incorretos.'}, 401
@@ -67,5 +64,10 @@ class UserLogin(Resource):
 class UserLogout(Resource):
     @jwt_required()
     def post(self):
-        # Aqui, o JWT no cliente é invalidado, no servidor, não há necessidade de ações adicionais
-        return {"message": "Usuário deslogado com sucesso."}, 200
+        """
+        Realiza o logout do usuário invalidando o token atual.
+        """
+        jwt_token = get_jwt()
+        jti = jwt_token["jti"]  # ID único do token
+        BLOCKLIST.add(jti)
+        return {"message": "Logout realizado com sucesso."}, 200
