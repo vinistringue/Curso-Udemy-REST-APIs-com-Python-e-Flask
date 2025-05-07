@@ -1,19 +1,29 @@
+from flask import request
 from flask_restful import Resource, reqparse
-from flask_jwt_extended import create_access_token, jwt_required, get_jwt
+from flask_jwt_extended import (
+    create_access_token, jwt_required, get_jwt
+)
 from models.usuario import UserModel
 from blocklist import BLOCKLIST
 
-# Parser único e centralizado
+# Parser: só login e senha, não expomos 'ativado' no argumento
 user_args = reqparse.RequestParser()
-user_args.add_argument('login', type=str, required=True, help="O campo 'login' não pode estar em branco.")
-user_args.add_argument('senha', type=str, required=True, help="O campo 'senha' não pode estar em branco.")
+user_args.add_argument(
+    'login', type=str, required=True,
+    help="O campo 'login' não pode estar em branco.",
+    location='json'
+)
+user_args.add_argument(
+    'senha', type=str, required=True,
+    help="O campo 'senha' não pode estar em branco.",
+    location='json'
+)
+
 
 class User(Resource):
     @jwt_required()
     def get(self, user_id):
-        """
-        Retorna informações de um usuário com base no user_id.
-        """
+        """GET /usuarios/<user_id> — retorna dados do usuário"""
         user = UserModel.find_user(user_id)
         if user:
             return user.json(), 200
@@ -21,9 +31,7 @@ class User(Resource):
 
     @jwt_required()
     def delete(self, user_id):
-        """
-        Deleta um usuário com base no user_id.
-        """
+        """DELETE /usuarios/<user_id> — exclui o usuário"""
         user = UserModel.find_user(user_id)
         if not user:
             return {"message": "Usuário não encontrado."}, 404
@@ -31,43 +39,64 @@ class User(Resource):
             user.delete_user()
             return {"message": "Usuário excluído com sucesso."}, 200
         except Exception as e:
-            return {"message": f"Erro ao deletar usuário: {str(e)}"}, 500
+            return {"message": "Erro ao deletar usuário.", "erro": str(e)}, 500
+
 
 class UserRegister(Resource):
     def post(self):
-        """
-        Registra um novo usuário.
-        """
+        """POST /cadastro — registra um novo usuário"""
         dados = user_args.parse_args()
-
         if UserModel.find_by_login(dados['login']):
             return {'message': f"O login '{dados['login']}' já está em uso."}, 400
 
         novo_usuario = UserModel(**dados)
-        novo_usuario.save_user()
-        return {'message': 'Usuário criado com sucesso.'}, 201
+        novo_usuario.ativado = False
+        try:
+            novo_usuario.save_user()
+            return {'message': 'Usuário criado com sucesso.'}, 201
+        except Exception as e:
+            return {'message': 'Erro ao salvar usuário.', 'erro': str(e)}, 500
+
 
 class UserLogin(Resource):
     def post(self):
-        """
-        Realiza o login de um usuário e retorna o token JWT.
-        """
+        """POST /login — autentica e retorna um access token"""
         dados = user_args.parse_args()
         usuario = UserModel.find_by_login(dados['login'])
 
-        if usuario and usuario.verify_password(dados['senha']):
-            access_token = create_access_token(identity=str(usuario.user_id))
-            return {'access_token': access_token}, 200
+        if not usuario or not usuario.verify_password(dados['senha']):
+            return {'message': 'Usuário ou senha incorretos.'}, 401
 
-        return {'message': 'Usuário ou senha incorretos.'}, 401
+        if not usuario.ativado:
+            return {'message': 'Usuário não confirmado.'}, 401
+
+        access_token = create_access_token(identity=str(usuario.user_id))
+        return {'access_token': access_token}, 200
+
 
 class UserLogout(Resource):
     @jwt_required()
     def post(self):
-        """
-        Realiza o logout do usuário invalidando o token atual.
-        """
-        jwt_token = get_jwt()
-        jti = jwt_token["jti"]  # ID único do token
+        """POST /logout — invalida o token JWT atual"""
+        jti = get_jwt()["jti"]
         BLOCKLIST.add(jti)
         return {"message": "Logout realizado com sucesso."}, 200
+
+
+class UserConfirm(Resource):
+    def get(self, user_id):
+        """GET /confirmacao/<user_id> — ativa o usuário"""
+        user = UserModel.find_user(user_id)
+        if not user:
+            return {"message": f"Usuário id '{user_id}' não encontrado."}, 404
+
+        if user.ativado:
+            return {"message": "Usuário já está confirmado."}, 200
+
+        user.ativado = True
+        try:
+            user.save_user()
+            return {"message": "Usuário confirmado com sucesso."}, 200
+        except Exception as e:
+            return {"message": "Erro ao confirmar usuário.", "erro": str(e)}, 500
+
