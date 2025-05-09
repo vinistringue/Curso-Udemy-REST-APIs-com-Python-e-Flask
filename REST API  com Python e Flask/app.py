@@ -17,6 +17,7 @@ from models.hotel import HotelModel
 from models.site import SiteModel
 from models.usuario import UserModel
 
+import os
 
 def create_app():
     app = Flask(__name__)
@@ -32,6 +33,12 @@ def create_app():
 
     # Habilita CORS
     CORS(app)
+
+    # Configurações de Email (Mailgun)
+    app.config["MAILGUN_DOMAIN"] = "api.projeto.com"
+    app.config["MAILGUN_API_KEY"] = "sua_api_key_mailgun"  # Substitua pela real
+    app.config["EMAIL_FROM"] = "postmaster@api.projeto.com"
+    app.config["SMTP_PASSWORD"] = "Hangloose12"  # Guardado apenas para referência
 
     api = Api(app)
 
@@ -53,7 +60,7 @@ def create_app():
     api.add_resource(UserLogin, "/login")
     api.add_resource(User, "/usuarios/<int:user_id>")
     api.add_resource(UserLogout, "/logout")
-    api.add_resource(UserConfirm, "/confirmacao/<int:user_id>")  # ✅ ROTA ADICIONADA
+    api.add_resource(UserConfirm, "/confirmacao/<int:user_id>")
 
     api.add_resource(Sites, "/sites")
     api.add_resource(Site, "/sites/<int:site_id>")

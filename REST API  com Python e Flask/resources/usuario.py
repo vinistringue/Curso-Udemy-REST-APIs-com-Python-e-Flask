@@ -1,10 +1,11 @@
-from flask import request
+from flask import request, render_template
 from flask_restful import Resource, reqparse
 from flask_jwt_extended import (
     create_access_token, jwt_required, get_jwt
 )
 from models.usuario import UserModel
 from blocklist import BLOCKLIST
+from utils.email import enviar_email_confirmacao  # ✅ Importação da função de e-mail
 
 # Parser: só login e senha, não expomos 'ativado' no argumento
 user_args = reqparse.RequestParser()
@@ -53,7 +54,9 @@ class UserRegister(Resource):
         novo_usuario.ativado = False
         try:
             novo_usuario.save_user()
-            return {'message': 'Usuário criado com sucesso.'}, 201
+            # ✅ Enviar email de confirmação
+            enviar_email_confirmacao(novo_usuario)
+            return {'message': 'Usuário criado com sucesso. Confirme seu email para ativar sua conta.'}, 201
         except Exception as e:
             return {'message': 'Erro ao salvar usuário.', 'erro': str(e)}, 500
 
@@ -91,12 +94,12 @@ class UserConfirm(Resource):
             return {"message": f"Usuário id '{user_id}' não encontrado."}, 404
 
         if user.ativado:
-            return {"message": "Usuário já está confirmado."}, 200
+            return render_template("confirmacao_sucesso.html", mensagem="Usuário já estava confirmado.")
 
         user.ativado = True
         try:
             user.save_user()
-            return {"message": "Usuário confirmado com sucesso."}, 200
+            # ✅ Retorna uma página HTML de sucesso
+            return render_template("confirmacao_sucesso.html", mensagem="Sua conta foi confirmada com sucesso!")
         except Exception as e:
             return {"message": "Erro ao confirmar usuário.", "erro": str(e)}, 500
-
